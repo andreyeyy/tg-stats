@@ -82,7 +82,7 @@ impl ChatStats {
         // the number of seconds between the first and the last message
         let mut total_seconds: u64 = 0;
 
-        let _ = f.seek(SeekFrom::Start(0)).unwrap(); // put file cursor back at the start
+        f.rewind().unwrap(); // put file cursor back at the start
 
         let reader = BufReader::new(f);
         let parser = JsonArrayParser::new(reader);

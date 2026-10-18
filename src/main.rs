@@ -1,212 +1,197 @@
-use std::env;
-use std::process::exit;
-use std::io::prelude::*;
-use std::io::BufReader;
-use std::fs::File;
-use std::collections::HashMap;
-use serde::Deserialize;
+mod statistics;
+use statistics::*;
+use std::sync::mpsc;
+use std::thread;
+use std::sync::mpsc::Receiver;
 
-mod visualize;
+use egui_plot::Bar;
+use egui_plot::BarChart;
+use egui_plot::Plot;
+use egui_plot::GridMark;
 
-type TimeDistribution = [u64; 24];
+use eframe::egui;
 
-#[derive (Debug)]
-struct User {
-    name: String,
-    id: String,
-    total_messages: u64,
-    total_stickers: u64,
-    time_distribution: TimeDistribution,
-}
-impl User {
-    fn new(id: &str) -> Self {
-        User{
-            id: id.to_string(),
-            name: "Deleted Account".to_string(),
-            total_messages: 0,
-            total_stickers: 0,
-            time_distribution: TimeDistribution::default(),
+const WINDOW_TITLE: &str = "Telegram Statistics";
+
+fn main() -> eframe::Result<()> {
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default().with_drag_and_drop(true),
+        ..Default::default()
+    };
+    eframe::run_native(
+        WINDOW_TITLE,
+        options,
+        Box::new(|_cc| Ok(Box::new(MainApp {
+            screen: Screen::DropScreen,
+            stats: None,
+            receiver: None,
+            selected_tab: 0,
+            selected_user: None,
+            error: None,
         }
+        ))),
+    )
+}
+
+enum Screen {
+    DropScreen,
+    Loading,
+    Statistics,
+    Error,
+}
+
+struct MainApp {
+    screen: Screen,
+    stats: Option<ChatStats>,
+    receiver: Option<Receiver<Result<ChatStats, StatsError>>>,
+    selected_tab: usize,
+    selected_user: Option<String>, // ID of the selected user
+    error: Option<StatsError>,
+}
+
+impl MainApp {
+
+    fn loading(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+       ui.vertical_centered(|ui| {
+            let available_height = ui.available_height();
+            let estimated_content_height = 60.0;
+            
+            if available_height > estimated_content_height {
+                ui.add_space((available_height - estimated_content_height) / 2.0);
+            }
+
+            ui.spinner();
+            ui.label("Generating…");
+        });
     }
-}
 
-#[derive (Debug)]
-struct ChatStats {
-    name: String,
-    total_messages: u64,
-    time_distribution: TimeDistribution,
-    users: HashMap<String, User>,
-}
-
-#[derive(Debug, Deserialize)]
-struct Message {
-    id: i64,
-    date_unixtime: String,
-    date: String,
-    from: Option<String>,
-    from_id: Option<String>,
-    media_type: Option<String>,
-}
-
-impl Message {
-    fn from_json(json_message: &str) -> Self {
-        serde_json::from_str(json_message).unwrap()
-    }
-}
-
-impl ChatStats {
-    fn from(filename: &str) -> ChatStats{
-        let f = File::open(filename).unwrap_or_else(|_err|{
-            eprintln!("Cannot open file: {}", filename);
-            exit(1);
+    fn drop_screen(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        ui.vertical_centered(|ui| {
+            ui.add_space(ui.available_height() / 2.0 - 40.0);
+            ui.label(
+                egui::RichText::new("Drop result.json here")
+                    .size(28.0)
+                    .color(egui::Color32::LIGHT_BLUE),
+            );
+            ui.label(
+                egui::RichText::new("or click to browse")
+                    .size(14.0)
+                    .color(egui::Color32::LIGHT_BLUE),
+            );
         });
 
-        let reader = BufReader::new(f);
-        let parser = JsonArrayParser::new(reader);
+        ui.input(|i| {
+            for file in &i.raw.dropped_files {
+                let path = file.path().to_path_buf();
+                self.screen = Screen::Loading;
 
-        let mut total_messages: u64 = 0;
-        let mut users: HashMap<String, User> = HashMap::new();
-        let mut time_distribution = TimeDistribution::default();
+                let (tx, rx) = mpsc::channel::<Result<ChatStats, StatsError>>();
+                self.receiver = Some(rx);
 
-        for buf in parser {
-            let message_str = str::from_utf8(&buf).unwrap();
-            let msg = Message::from_json(message_str);
+                thread::spawn(move || {
+                    let result = statistics::generate(&path);
+                    let _ = tx.send(result);
+                });
+            }
+        });
+    }
+    fn statistics(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let stats: &ChatStats = self.stats.as_ref().expect("ChatStats is ready when in statistics menu");
 
-            if msg.from_id.is_none() {continue;} // service message
-            
-            // ID of the user
-            let id = msg.from_id.unwrap();
-
-            // Add user to hash map
-            if !users.contains_key(&id) {
-                users.insert(id.clone(), User::new(&id));
-
-                // Add the name to the user (if they have one)
-                if let Some(username) = msg.from {
-                    users.get_mut(&id).unwrap().name = username;
+        ui.horizontal(|ui| {
+            for (index, title) in ["General", "Users"].iter().enumerate() {
+                if ui.selectable_label(self.selected_tab == index, *title).clicked() {
+                    self.selected_tab = index;
                 }
             }
+        });
+        ui.separator();
 
-            let user = users.get_mut(&id).unwrap();
+        match self.selected_tab {
+            0 => { // General tab
+                //
+                ui.heading(format!("Total messages: {}", stats.total_messages));
 
-            // Count total messages of user
-            user.total_messages += 1;
+                let mut users_messages: Vec<(u64, String)> = stats.users
+                    .values()
+                    .map(|user| (user.total_messages, user.name.clone()))
+                    .collect();
+                users_messages.sort_by(|a, b| a.0.cmp(&b.0));
 
-            // Total messages in the entire chat
-            total_messages += 1;
+                let bars: Vec<Bar> = users_messages
+                    .iter()
+                    .enumerate()
+                    .map(|(i, (count, _name))| Bar::new(i as f64, *count as f64))
+                    .collect();
 
-            // Count stickers
-            if msg.media_type.is_some() && msg.media_type.unwrap() == "sticker"{
-                user.total_stickers += 1;
+                Plot::new("messages_by_user")
+                    .show_grid(false)
+                    .y_axis_formatter(move |mark: GridMark, _range| {
+                        let i = mark.value.round() as usize;
+                            users_messages.get(i).unwrap_or(&(0u64, String::new())).1.clone()
+                    })
+                    .show(ui, |plot_ui| {
+                        plot_ui.bar_chart(BarChart::new("Messages", bars).horizontal());
+                    });
             }
+            1 => { // Users tab
 
-            // Add data to the daily time distributions of both the entire group and the user
-            let hour: u64 = (&msg.date[11..13]).parse().unwrap();
-            *user.time_distribution.get_mut(hour as usize).unwrap() += 1;
-            *time_distribution.get_mut(hour as usize).unwrap() += 1;
-
-        }
-
-        return ChatStats {
-            name: "Chat Name".to_string(),
-            total_messages,
-            users,
-            time_distribution,
-        }
-
-    }
-}
-
-/// Custom JSON array parser to avoid loading the entire file in memory
-struct JsonArrayParser {
-    reader: BufReader<File>,
-    bracket_level: i32,
-    inside_string: bool,
-    last_char_escape: bool,
-}
-
-impl JsonArrayParser {
-    fn new(mut reader: BufReader<File>) -> Self {
-        reader.skip_until(b'[').unwrap();
-        JsonArrayParser{
-            reader,
-            inside_string: false,
-            bracket_level: 0,
-            last_char_escape: false,
-        }
-    }
-}
-
-impl Iterator for JsonArrayParser {
-    type Item = Vec<u8>;
-
-    /// Returns the next message in the .json file
-    fn next(&mut self) -> Option<Self::Item>{
-
-        let mut message_buf: Vec<u8> = Vec::new();
-        let bytes = (&mut self.reader).bytes();
-
-        for b in bytes {
-            let b = b.unwrap();
-
-            message_buf.push(b);
-
-            if self.last_char_escape { // if the character before is '\'
-                self.last_char_escape = false;
-                assert!(self.inside_string, "Unexpected backslash outside of a string");
-                assert!(
-                    b == b'\\' || 
-                    b == b'\"' || 
-                    b == b'/' || 
-                    b == b'b' || 
-                    b == b'f' || 
-                    b == b'n' || 
-                    b == b'r' || 
-                    b == b't' || 
-                    b == b'u',
-                    "Unexpected escaped character: \\{}", b as char
-                );
-                continue;
-            }
-
-            if b == b'\\' { // escape character
-                self.last_char_escape = true;
-            }
-
-            else if b == b'\"' { // the " character, not escaped
-                self.inside_string = !self.inside_string;
-            }
-
-            else if b == b'{' {
-                if self.inside_string {continue;}
-                self.bracket_level += 1;
-            }
-
-            else if b == b'}' {
-                if self.inside_string {continue;}
-                self.bracket_level -= 1;
-                if self.bracket_level == 0 {
-                    let _ = self.reader.skip_until(b',');
-                    return Some(message_buf);
+                let selected_name = 
+                if let Some(id) = &self.selected_user {
+                    stats.users.get(id).unwrap().name.clone()
                 }
-            }
+                else {"Select User".to_string()};
 
+                egui::ComboBox::from_label("")
+                .selected_text(selected_name)
+                .show_ui(ui, |ui| {
+                    for (id, user) in &stats.users {
+                        ui.selectable_value(
+                            &mut self.selected_user,
+                            Some(id.clone()),
+                            &user.name,
+                        );
+                    }
+                });
+                ui.label("*todo*");
+            }
+            _ => {}
         }
-        return None;
+    }
+
+}
+
+impl eframe::App for MainApp {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        if let Some(rx) = &self.receiver {
+            if let Ok(result) = rx.try_recv() {
+                match result {
+                    Ok(stats) => {
+                        // println!("{:?}", stats);
+                        self.stats = Some(stats);
+                        self.screen = Screen::Statistics;
+                        ui.ctx().send_viewport_cmd(egui::ViewportCommand::InnerSize(
+                            egui::vec2(1000.0, 700.0),
+                        )); 
+                    },
+                    Err(e) => {
+                        self.error = Some(e);
+                        self.screen = Screen::Error;
+                    },
+                }
+                self.receiver = None;
+            }
+        }
+        match self.screen {
+
+            Screen::DropScreen  => self.drop_screen(ui, _frame),
+            Screen::Loading     => self.loading(ui, _frame),
+            Screen::Statistics  => self.statistics(ui, _frame),
+
+            Screen::Error=> {
+                ui.heading("Error");
+            }
+        }
     }
 }
 
-fn main() {
-    let args: Vec<String> = env::args().collect();
-    let path = match args.get(1) {
-        None => {
-            eprintln!("No path provided");
-            exit(1);
-        },
-        Some(x) => x,
-    };
-
-    let stats = ChatStats::from(path);
-
-    visualize::visualize(&stats);
-}

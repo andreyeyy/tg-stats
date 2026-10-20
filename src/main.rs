@@ -7,6 +7,7 @@ use std::sync::mpsc::Receiver;
 use egui_plot::Bar;
 use egui_plot::BarChart;
 use egui_plot::Plot;
+use egui_plot::PlotConfig;
 use egui_plot::GridMark;
 
 use eframe::egui;
@@ -126,6 +127,7 @@ impl MainApp {
 
                 Plot::new("messages_by_user")
                     .show_grid(false)
+                    .show_crosshair(false)
                     .y_axis_formatter(move |mark: GridMark, _range| {
                         let i = mark.value.round() as usize;
                             users_messages.get(i).unwrap_or(&(0u64, String::new())).1.clone()
@@ -153,7 +155,26 @@ impl MainApp {
                         );
                     }
                 });
-                ui.label("*todo*");
+                if let Some(selected_user_id) = &self.selected_user {
+                    let user: &User = &stats.users[selected_user_id];
+
+
+                    ui.label(format!("Total messages: {}", user.total_messages));
+
+                    let bars = user.day_time_distribution
+                            .iter()
+                            .enumerate()
+                            .map(|(i, value)| Bar::new(i as f64, *value as f64))
+                            .collect();
+
+                    Plot::new("daily_distribution")
+                        .show_crosshair(false)
+                        .show_grid(false)
+                        .show(ui, |plot_ui| {
+                            plot_ui.bar_chart(BarChart::new("Daily message distribution", bars));
+                        });
+                }
+
             }
             _ => {}
         }

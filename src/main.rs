@@ -110,6 +110,131 @@ impl MainApp {
             }
         });
     }
+
+    fn general_tab(&mut self, ui: &mut egui::Ui) {
+        let stats: &ChatStats = self.stats.as_ref().expect("ChatStats is available when in general tab");
+
+        egui::ScrollArea::vertical().show(ui, |ui| {
+        ui.label(
+            egui::RichText::new(format!("Total messages: {}", stats.total_messages))
+                .size(BASE_FONT_SIZE)
+                .color(egui::Color32::WHITE)
+        );
+
+        let mut users_messages: Vec<(u64, String)> = stats.users
+            .values()
+            .map(|user| (user.total_messages, user.name.clone()))
+            .collect();
+        users_messages.sort_by(|a, b| a.0.cmp(&b.0));
+
+        let bars: Vec<Bar> = users_messages
+            .iter()
+            .enumerate()
+            .map(|(i, (count, _name))| Bar::new(i as f64, *count as f64))
+            .collect();
+
+        Plot::new("messages_by_user")
+            .show_grid(false)
+            .show_crosshair(false)
+            .y_axis_formatter(move |mark: GridMark, _range| {
+                let i = mark.value.round() as usize;
+                    users_messages.get(i).unwrap_or(&(0u64, String::new())).1.clone()
+            })
+            .show(ui, |plot_ui| {
+                plot_ui.bar_chart(BarChart::new("Messages", bars).horizontal());
+            });
+        });
+    }
+
+    fn users_tab(&mut self, ui: &mut egui::Ui) {
+        let stats: &ChatStats = self.stats.as_ref().expect("ChatStats is available when in users tab");
+
+        let selected_name = 
+        if let Some(id) = &self.selected_user {
+            stats.users.get(id).unwrap().name.clone()
+        }
+        else {"Select User".to_string()};
+
+        // User selection box
+        egui::ComboBox::from_label("")
+        .selected_text(selected_name)
+        .show_ui(ui, |ui| {
+            let mut sorted_users: Vec<(&String, &User)> = stats.users.iter().collect();
+            sorted_users.sort_unstable_by_key(|(id, user)| user.total_messages);
+
+            for (id, user) in sorted_users.iter().rev() {
+                ui.selectable_value(
+                    &mut self.selected_user,
+                    Some(id.to_string()),
+                    &user.name,
+                );
+            }
+        });
+
+        egui::ScrollArea::vertical().show(ui, |ui| {
+        if let Some(selected_user_id) = &self.selected_user {
+            let user: &User = &stats.users[selected_user_id];
+
+
+            ui.label(
+                egui::RichText::new(format!("Total messages: {} ({:.1}% of all messages)",
+                    user.total_messages,
+                    (user.total_messages as f64 / stats.total_messages as f64) * 100.0))
+                    .size(BASE_FONT_SIZE)
+                    .color(egui::Color32::WHITE)
+            );
+
+            ui.vertical_centered(|ui| {
+                ui.label(
+                    egui::RichText::new("Hourly Message Distribution")
+                        .size(BASE_FONT_SIZE)
+                        .color(egui::Color32::WHITE)
+                );
+            });
+
+            let day_time_distribution_bars = user.day_time_distribution
+                    .iter()
+                    .enumerate()
+                    .map(|(i, value)| Bar::new(i as f64, *value as f64))
+                    .collect();
+
+            Plot::new("daytime")
+                .height(300f32)
+                .allow_scroll(false)
+                .show_crosshair(false)
+                .show_grid(false)
+                .show(ui, |plot_ui| {
+                    plot_ui.bar_chart(BarChart::new("daytime_barchart", day_time_distribution_bars));
+                });
+
+            ui.add_space(20.0);
+
+            ui.vertical_centered(|ui| {
+                ui.label(
+                    egui::RichText::new("Activity Over Time")
+                        .size(BASE_FONT_SIZE)
+                        .color(egui::Color32::WHITE)
+                );
+            });
+
+            let all_time_distribution_bars = user.all_time_distribution
+                    .iter()
+                    .enumerate()
+                    .map(|(i, value)| Bar::new(i as f64, *value as f64).width(1.0))
+                    .collect();
+
+            Plot::new("alltime")
+                .height(300f32)
+                .allow_scroll(false)
+                .show_crosshair(false)
+                .show_grid(false)
+                .show(ui, |plot_ui| {
+                    plot_ui.bar_chart(BarChart::new("alltime_barchart", all_time_distribution_bars));
+                });
+        }
+        });
+    }
+
     fn statistics(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let stats: &ChatStats = self.stats.as_ref().expect("ChatStats is ready when in statistics menu");
 
@@ -121,128 +246,10 @@ impl MainApp {
             }
         });
         ui.separator();
+
         match self.selected_tab {
-            0 => { // General tab
-
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                ui.label(
-                    egui::RichText::new(format!("Total messages: {}", stats.total_messages))
-                        .size(BASE_FONT_SIZE)
-                        .color(egui::Color32::WHITE)
-                );
-
-                let mut users_messages: Vec<(u64, String)> = stats.users
-                    .values()
-                    .map(|user| (user.total_messages, user.name.clone()))
-                    .collect();
-                users_messages.sort_by(|a, b| a.0.cmp(&b.0));
-
-                let bars: Vec<Bar> = users_messages
-                    .iter()
-                    .enumerate()
-                    .map(|(i, (count, _name))| Bar::new(i as f64, *count as f64))
-                    .collect();
-
-                Plot::new("messages_by_user")
-                    .show_grid(false)
-                    .show_crosshair(false)
-                    .y_axis_formatter(move |mark: GridMark, _range| {
-                        let i = mark.value.round() as usize;
-                            users_messages.get(i).unwrap_or(&(0u64, String::new())).1.clone()
-                    })
-                    .show(ui, |plot_ui| {
-                        plot_ui.bar_chart(BarChart::new("Messages", bars).horizontal());
-                    });
-                });
-            }
-            1 => { // Users tab
-
-                let selected_name = 
-                if let Some(id) = &self.selected_user {
-                    stats.users.get(id).unwrap().name.clone()
-                }
-                else {"Select User".to_string()};
-
-                // User selection box
-                egui::ComboBox::from_label("")
-                .selected_text(selected_name)
-                .show_ui(ui, |ui| {
-                    let mut sorted_users: Vec<(&String, &User)> = stats.users.iter().collect();
-                    sorted_users.sort_unstable_by_key(|(id, user)| user.total_messages);
-
-                    for (id, user) in sorted_users.iter().rev() {
-                        ui.selectable_value(
-                            &mut self.selected_user,
-                            Some(id.to_string()),
-                            &user.name,
-                        );
-                    }
-                });
-
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                if let Some(selected_user_id) = &self.selected_user {
-                    let user: &User = &stats.users[selected_user_id];
-
-
-                    ui.label(
-                        egui::RichText::new(format!("Total messages: {} ({:.1}% of all messages)",
-                            user.total_messages,
-                            (user.total_messages as f64 / stats.total_messages as f64) * 100.0))
-                            .size(BASE_FONT_SIZE)
-                            .color(egui::Color32::WHITE)
-                    );
-
-                    ui.vertical_centered(|ui| {
-                        ui.label(
-                            egui::RichText::new("Hourly Message Distribution")
-                                .size(BASE_FONT_SIZE)
-                                .color(egui::Color32::WHITE)
-                        );
-                    });
-
-                    let day_time_distribution_bars = user.day_time_distribution
-                            .iter()
-                            .enumerate()
-                            .map(|(i, value)| Bar::new(i as f64, *value as f64))
-                            .collect();
-
-                    Plot::new("daytime")
-                        .height(300f32)
-                        .allow_scroll(false)
-                        .show_crosshair(false)
-                        .show_grid(false)
-                        .show(ui, |plot_ui| {
-                            plot_ui.bar_chart(BarChart::new("daytime_barchart", day_time_distribution_bars));
-                        });
-
-                    ui.add_space(20.0);
-
-                    ui.vertical_centered(|ui| {
-                        ui.label(
-                            egui::RichText::new("Activity Over Time")
-                                .size(BASE_FONT_SIZE)
-                                .color(egui::Color32::WHITE)
-                        );
-                    });
-
-                    let all_time_distribution_bars = user.all_time_distribution
-                            .iter()
-                            .enumerate()
-                            .map(|(i, value)| Bar::new(i as f64, *value as f64).width(1.0))
-                            .collect();
-
-                    Plot::new("alltime")
-                        .height(300f32)
-                        .allow_scroll(false)
-                        .show_crosshair(false)
-                        .show_grid(false)
-                        .show(ui, |plot_ui| {
-                            plot_ui.bar_chart(BarChart::new("alltime_barchart", all_time_distribution_bars));
-                        });
-                }
-                });
-
-            }
+            0 => self.general_tab(ui),
+            1 => self.users_tab(ui),
             _ => {}
         }
     }

@@ -140,6 +140,7 @@ impl ChatStats {
             let bucket = ((msg_date - first_message_date) * ALL_TIME_DISTRIBUTION_RESOLUTION as u64 - 1) / total_seconds;
 
             all_time_distribution[bucket as usize] += 1;
+            user.all_time_distribution[bucket as usize] += 1;
 
         }
 

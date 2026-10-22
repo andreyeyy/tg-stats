@@ -108,10 +108,10 @@ impl MainApp {
             }
         });
         ui.separator();
-        egui::ScrollArea::vertical().show(ui, |ui| {
         match self.selected_tab {
             0 => { // General tab
 
+                egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.label(
                     egui::RichText::new(format!("Total messages: {}", stats.total_messages))
                         .size(BASE_FONT_SIZE)
@@ -140,6 +140,7 @@ impl MainApp {
                     .show(ui, |plot_ui| {
                         plot_ui.bar_chart(BarChart::new("Messages", bars).horizontal());
                     });
+                });
             }
             1 => { // Users tab
 
@@ -165,12 +166,15 @@ impl MainApp {
                     }
                 });
 
+                egui::ScrollArea::vertical().show(ui, |ui| {
                 if let Some(selected_user_id) = &self.selected_user {
                     let user: &User = &stats.users[selected_user_id];
 
 
                     ui.label(
-                        egui::RichText::new(format!("Total messages: {}", user.total_messages))
+                        egui::RichText::new(format!("Total messages: {} ({:.1}% of all messages)",
+                            user.total_messages,
+                            (user.total_messages as f64 / stats.total_messages as f64) * 100.0))
                             .size(BASE_FONT_SIZE)
                             .color(egui::Color32::WHITE)
                     );
@@ -183,26 +187,51 @@ impl MainApp {
                         );
                     });
 
-                    let bars = user.day_time_distribution
+                    let day_time_distribution_bars = user.day_time_distribution
                             .iter()
                             .enumerate()
                             .map(|(i, value)| Bar::new(i as f64, *value as f64))
                             .collect();
 
-                    Plot::new("daily_distribution")
+                    Plot::new("daytime")
                         .height(300f32)
                         .allow_scroll(false)
                         .show_crosshair(false)
                         .show_grid(false)
                         .show(ui, |plot_ui| {
-                            plot_ui.bar_chart(BarChart::new("Daily message distribution", bars));
+                            plot_ui.bar_chart(BarChart::new("daytime_barchart", day_time_distribution_bars));
+                        });
+
+                    ui.add_space(20.0);
+
+                    ui.vertical_centered(|ui| {
+                        ui.label(
+                            egui::RichText::new("Activity Over Time")
+                                .size(BASE_FONT_SIZE)
+                                .color(egui::Color32::WHITE)
+                        );
+                    });
+
+                    let all_time_distribution_bars = user.all_time_distribution
+                            .iter()
+                            .enumerate()
+                            .map(|(i, value)| Bar::new(i as f64, *value as f64).width(1.0))
+                            .collect();
+
+                    Plot::new("alltime")
+                        .height(300f32)
+                        .allow_scroll(false)
+                        .show_crosshair(false)
+                        .show_grid(false)
+                        .show(ui, |plot_ui| {
+                            plot_ui.bar_chart(BarChart::new("alltime_barchart", all_time_distribution_bars));
                         });
                 }
+                });
 
             }
             _ => {}
         }
-        });
     }
 
 }
@@ -217,7 +246,7 @@ impl eframe::App for MainApp {
                         self.stats = Some(stats);
                         self.screen = Screen::Statistics;
                         ui.ctx().send_viewport_cmd(egui::ViewportCommand::InnerSize(
-                            egui::vec2(1000.0, 700.0),
+                            egui::vec2(1000.0, 750.0),
                         )); 
                     },
                     Err(e) => {

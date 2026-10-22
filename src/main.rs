@@ -127,21 +127,24 @@ impl MainApp {
             .collect();
         users_messages.sort_by(|a, b| a.0.cmp(&b.0));
 
-        let bars: Vec<Bar> = users_messages
+        let users_messages_bars: Vec<Bar> = users_messages
             .iter()
             .enumerate()
             .map(|(i, (count, _name))| Bar::new(i as f64, *count as f64))
             .collect();
 
+        let users_messages_plot_height: f32 = (700f32).min(40.0 * stats.users.len() as f32);
+
         Plot::new("messages_by_user")
             .show_grid(false)
+            .height(users_messages_plot_height)
             .show_crosshair(false)
             .y_axis_formatter(move |mark: GridMark, _range| {
                 let i = mark.value.round() as usize;
                     users_messages.get(i).unwrap_or(&(0u64, String::new())).1.clone()
             })
             .show(ui, |plot_ui| {
-                plot_ui.bar_chart(BarChart::new("Messages", bars).horizontal());
+                plot_ui.bar_chart(BarChart::new("Messages", users_messages_bars).horizontal());
             });
         });
     }
@@ -160,7 +163,7 @@ impl MainApp {
         .selected_text(selected_name)
         .show_ui(ui, |ui| {
             let mut sorted_users: Vec<(&String, &User)> = stats.users.iter().collect();
-            sorted_users.sort_unstable_by_key(|(id, user)| user.total_messages);
+            sorted_users.sort_unstable_by_key(|(_id, user)| user.total_messages);
 
             for (id, user) in sorted_users.iter().rev() {
                 ui.selectable_value(
@@ -236,8 +239,6 @@ impl MainApp {
     }
 
     fn statistics(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        let stats: &ChatStats = self.stats.as_ref().expect("ChatStats is ready when in statistics menu");
-
         ui.horizontal(|ui| {
             for (index, title) in ["General", "Users"].iter().enumerate() {
                 if ui.selectable_label(self.selected_tab == index, *title).clicked() {

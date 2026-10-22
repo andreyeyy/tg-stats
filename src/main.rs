@@ -3,14 +3,16 @@ use statistics::*;
 use std::sync::mpsc;
 use std::thread;
 use std::sync::mpsc::Receiver;
+use std::path::Path;
 
 use egui_plot::Bar;
 use egui_plot::BarChart;
 use egui_plot::Plot;
-use egui_plot::PlotConfig;
 use egui_plot::GridMark;
 
 use eframe::egui;
+
+use rfd::FileDialog;
 
 const WINDOW_TITLE: &str = "Telegram Statistics";
 const BASE_FONT_SIZE: f32 = 14.0;
@@ -53,6 +55,20 @@ struct MainApp {
 
 impl MainApp {
 
+    fn load_result_json(&mut self, path: &Path) {
+        let path = path.to_path_buf();
+        self.screen = Screen::Loading;
+
+        let (tx, rx) = mpsc::channel::<Result<ChatStats, StatsError>>();
+        self.receiver = Some(rx);
+
+        thread::spawn(move || {
+            let result = statistics::generate(&path);
+            let _ = tx.send(result);
+        });
+
+    }
+
     fn loading(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
        ui.vertical_centered(|ui| {
             let available_height = ui.available_height();
@@ -83,17 +99,14 @@ impl MainApp {
         });
 
         ui.input(|i| {
-            for file in &i.raw.dropped_files {
+            if i.pointer.button_clicked(egui::PointerButton::Primary) {
+                if let Some(path) = FileDialog::new().add_filter("json", &["json"]).pick_file(){
+                    self.load_result_json(&path);
+                }
+            }
+            if let Some(file) = &i.raw.dropped_files.iter().next() {
                 let path = file.path().to_path_buf();
-                self.screen = Screen::Loading;
-
-                let (tx, rx) = mpsc::channel::<Result<ChatStats, StatsError>>();
-                self.receiver = Some(rx);
-
-                thread::spawn(move || {
-                    let result = statistics::generate(&path);
-                    let _ = tx.send(result);
-                });
+                self.load_result_json(&path);
             }
         });
     }

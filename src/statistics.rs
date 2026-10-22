@@ -12,7 +12,7 @@ use rev_lines::RevLines;
 // every item represents how many messages were sent in that hour
 type DayTimeDistribution = [u64; 24];
 
-const ALL_TIME_DISTRIBUTION_RESOLUTION: usize = 100;
+pub const ALL_TIME_DISTRIBUTION_RESOLUTION: usize = 100;
 
 type AllTimeDistribution = [u64; ALL_TIME_DISTRIBUTION_RESOLUTION];
 

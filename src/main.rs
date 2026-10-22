@@ -44,6 +44,37 @@ enum Screen {
     Error,
 }
 
+fn centered_text(ui: &mut egui::Ui, text: &str) {
+    ui.vertical_centered(|ui| {
+        ui.label(
+            egui::RichText::new(text)
+                .size(BASE_FONT_SIZE)
+                .color(egui::Color32::WHITE)
+        );
+    });
+}
+
+fn text(ui: &mut egui::Ui, text: &str) {
+    ui.label(
+        egui::RichText::new(text)
+            .size(BASE_FONT_SIZE)
+            .color(egui::Color32::WHITE)
+    );
+}
+
+/// Formats seconds to either hours or days
+fn seconds_to_string(seconds: u64) -> String {
+    if seconds < 3600 {
+        format!("{} seconds", seconds)
+    }
+    else if seconds < 24 * 3600 {
+        format!("{:.1} hours", seconds as f64 / 3600.0)
+    }
+    else {
+        format!("{:.1} days", seconds as f64 / (24.0 * 3600.0))
+    }
+}
+
 struct MainApp {
     screen: Screen,
     stats: Option<ChatStats>,
@@ -115,11 +146,8 @@ impl MainApp {
         let stats: &ChatStats = self.stats.as_ref().expect("ChatStats is available when in general tab");
 
         egui::ScrollArea::vertical().show(ui, |ui| {
-        ui.label(
-            egui::RichText::new(format!("Total messages: {}", stats.total_messages))
-                .size(BASE_FONT_SIZE)
-                .color(egui::Color32::WHITE)
-        );
+
+        text(ui, &format!("Total messages: {}", stats.total_messages));
 
         let mut users_messages: Vec<(u64, String)> = stats.users
             .values()
@@ -135,6 +163,7 @@ impl MainApp {
 
         let users_messages_plot_height: f32 = (700f32).min(40.0 * stats.users.len() as f32);
 
+        centered_text(ui, "Message Count Distribution");
         Plot::new("messages_by_user")
             .show_grid(false)
             .height(users_messages_plot_height)
@@ -179,21 +208,11 @@ impl MainApp {
             let user: &User = &stats.users[selected_user_id];
 
 
-            ui.label(
-                egui::RichText::new(format!("Total messages: {} ({:.1}% of all messages)",
+            text(ui, &format!("Total messages: {} ({:.1}% of all messages)",
                     user.total_messages,
-                    (user.total_messages as f64 / stats.total_messages as f64) * 100.0))
-                    .size(BASE_FONT_SIZE)
-                    .color(egui::Color32::WHITE)
-            );
+                    (user.total_messages as f64 / stats.total_messages as f64) * 100.0));
 
-            ui.vertical_centered(|ui| {
-                ui.label(
-                    egui::RichText::new("Hourly Message Distribution")
-                        .size(BASE_FONT_SIZE)
-                        .color(egui::Color32::WHITE)
-                );
-            });
+            centered_text(ui, "Hourly Message Distribution");
 
             let day_time_distribution_bars = user.day_time_distribution
                     .iter()
@@ -212,13 +231,8 @@ impl MainApp {
 
             ui.add_space(20.0);
 
-            ui.vertical_centered(|ui| {
-                ui.label(
-                    egui::RichText::new("Activity Over Time")
-                        .size(BASE_FONT_SIZE)
-                        .color(egui::Color32::WHITE)
-                );
-            });
+            let seconds_per_bar = (stats.last_message_date - stats.first_message_date) / statistics::ALL_TIME_DISTRIBUTION_RESOLUTION as u64;
+            centered_text(ui, &format!("Activity Over Time (each bar represents {})", seconds_to_string(seconds_per_bar)));
 
             let all_time_distribution_bars = user.all_time_distribution
                     .iter()

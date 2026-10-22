@@ -13,6 +13,7 @@ use egui_plot::GridMark;
 use eframe::egui;
 
 const WINDOW_TITLE: &str = "Telegram Statistics";
+const BASE_FONT_SIZE: f32 = 14.0;
 
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
@@ -107,11 +108,15 @@ impl MainApp {
             }
         });
         ui.separator();
-
+        egui::ScrollArea::vertical().show(ui, |ui| {
         match self.selected_tab {
             0 => { // General tab
-                //
-                ui.heading(format!("Total messages: {}", stats.total_messages));
+
+                ui.label(
+                    egui::RichText::new(format!("Total messages: {}", stats.total_messages))
+                        .size(BASE_FONT_SIZE)
+                        .color(egui::Color32::WHITE)
+                );
 
                 let mut users_messages: Vec<(u64, String)> = stats.users
                     .values()
@@ -144,22 +149,39 @@ impl MainApp {
                 }
                 else {"Select User".to_string()};
 
+                // User selection box
                 egui::ComboBox::from_label("")
                 .selected_text(selected_name)
                 .show_ui(ui, |ui| {
-                    for (id, user) in &stats.users {
+                    let mut sorted_users: Vec<(&String, &User)> = stats.users.iter().collect();
+                    sorted_users.sort_unstable_by_key(|(id, user)| user.total_messages);
+
+                    for (id, user) in sorted_users.iter().rev() {
                         ui.selectable_value(
                             &mut self.selected_user,
-                            Some(id.clone()),
+                            Some(id.to_string()),
                             &user.name,
                         );
                     }
                 });
+
                 if let Some(selected_user_id) = &self.selected_user {
                     let user: &User = &stats.users[selected_user_id];
 
 
-                    ui.label(format!("Total messages: {}", user.total_messages));
+                    ui.label(
+                        egui::RichText::new(format!("Total messages: {}", user.total_messages))
+                            .size(BASE_FONT_SIZE)
+                            .color(egui::Color32::WHITE)
+                    );
+
+                    ui.vertical_centered(|ui| {
+                        ui.label(
+                            egui::RichText::new("Hourly Message Distribution")
+                                .size(BASE_FONT_SIZE)
+                                .color(egui::Color32::WHITE)
+                        );
+                    });
 
                     let bars = user.day_time_distribution
                             .iter()
@@ -168,6 +190,8 @@ impl MainApp {
                             .collect();
 
                     Plot::new("daily_distribution")
+                        .height(300f32)
+                        .allow_scroll(false)
                         .show_crosshair(false)
                         .show_grid(false)
                         .show(ui, |plot_ui| {
@@ -178,6 +202,7 @@ impl MainApp {
             }
             _ => {}
         }
+        });
     }
 
 }

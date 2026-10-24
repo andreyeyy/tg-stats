@@ -75,6 +75,28 @@ fn seconds_to_string(seconds: u64) -> String {
     }
 }
 
+fn activity_over_time_graph(ui: &mut egui::Ui,
+                            activity: &[u64; statistics::ALL_TIME_DISTRIBUTION_RESOLUTION],
+                            seconds_per_bar: u64) {
+    centered_text(ui, &format!("Activity Over Time (each bar represents {})", seconds_to_string(seconds_per_bar)));
+
+    let all_time_distribution_bars = activity
+            .iter()
+            .enumerate()
+            .map(|(i, value)| Bar::new(i as f64, *value as f64).width(1.0))
+            .collect();
+
+    Plot::new("alltime")
+        .height(300f32)
+        .allow_scroll(false)
+        .show_crosshair(false)
+        .show_grid(false)
+        .show(ui, |plot_ui| {
+            plot_ui.bar_chart(BarChart::new("alltime_barchart", all_time_distribution_bars));
+        });
+
+}
+
 struct MainApp {
     screen: Screen,
     stats: Option<ChatStats>,
@@ -147,34 +169,38 @@ impl MainApp {
 
         egui::ScrollArea::vertical().show(ui, |ui| {
 
-        text(ui, &format!("Total messages: {}", stats.total_messages));
+            text(ui, &format!("Total messages: {}", stats.total_messages));
 
-        let mut users_messages: Vec<(u64, String)> = stats.users
-            .values()
-            .map(|user| (user.total_messages, user.name.clone()))
-            .collect();
-        users_messages.sort_by(|a, b| a.0.cmp(&b.0));
+            let mut users_messages: Vec<(u64, String)> = stats.users
+                .values()
+                .map(|user| (user.total_messages, user.name.clone()))
+                .collect();
+            users_messages.sort_by(|a, b| a.0.cmp(&b.0));
 
-        let users_messages_bars: Vec<Bar> = users_messages
-            .iter()
-            .enumerate()
-            .map(|(i, (count, _name))| Bar::new(i as f64, *count as f64))
-            .collect();
+            let users_messages_bars: Vec<Bar> = users_messages
+                .iter()
+                .enumerate()
+                .map(|(i, (count, _name))| Bar::new(i as f64, *count as f64))
+                .collect();
 
-        let users_messages_plot_height: f32 = (700f32).min(40.0 * stats.users.len() as f32);
+            let users_messages_plot_height: f32 = (650f32).min(40.0 * stats.users.len() as f32);
 
-        centered_text(ui, "Message Count Distribution");
-        Plot::new("messages_by_user")
-            .show_grid(false)
-            .height(users_messages_plot_height)
-            .show_crosshair(false)
-            .y_axis_formatter(move |mark: GridMark, _range| {
-                let i = mark.value.round() as usize;
-                    users_messages.get(i).unwrap_or(&(0u64, String::new())).1.clone()
-            })
-            .show(ui, |plot_ui| {
-                plot_ui.bar_chart(BarChart::new("Messages", users_messages_bars).horizontal());
-            });
+            centered_text(ui, "Message Count Distribution");
+            Plot::new("messages_by_user")
+                .show_grid(false)
+                .height(users_messages_plot_height)
+                .show_crosshair(false)
+                .allow_scroll(false)
+                .y_axis_formatter(move |mark: GridMark, _range| {
+                    let i = mark.value.round() as usize;
+                        users_messages.get(i).unwrap_or(&(0u64, String::new())).1.clone()
+                })
+                .show(ui, |plot_ui| {
+                    plot_ui.bar_chart(BarChart::new("Messages", users_messages_bars).horizontal());
+                });
+
+            let seconds_per_bar = (stats.last_message_date - stats.first_message_date) / statistics::ALL_TIME_DISTRIBUTION_RESOLUTION as u64;
+            activity_over_time_graph(ui, &stats.all_time_distribution, seconds_per_bar);
         });
     }
 
@@ -232,22 +258,7 @@ impl MainApp {
             ui.add_space(20.0);
 
             let seconds_per_bar = (stats.last_message_date - stats.first_message_date) / statistics::ALL_TIME_DISTRIBUTION_RESOLUTION as u64;
-            centered_text(ui, &format!("Activity Over Time (each bar represents {})", seconds_to_string(seconds_per_bar)));
-
-            let all_time_distribution_bars = user.all_time_distribution
-                    .iter()
-                    .enumerate()
-                    .map(|(i, value)| Bar::new(i as f64, *value as f64).width(1.0))
-                    .collect();
-
-            Plot::new("alltime")
-                .height(300f32)
-                .allow_scroll(false)
-                .show_crosshair(false)
-                .show_grid(false)
-                .show(ui, |plot_ui| {
-                    plot_ui.bar_chart(BarChart::new("alltime_barchart", all_time_distribution_bars));
-                });
+            activity_over_time_graph(ui, &user.all_time_distribution, seconds_per_bar);
         }
         });
     }

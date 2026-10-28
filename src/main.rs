@@ -75,6 +75,8 @@ fn seconds_to_string(seconds: u64) -> String {
     }
 }
 
+fn seconds_to_days(seconds: u64) -> f64 { seconds as f64 / (3600.0*24.0) }
+
 fn activity_over_time_graph(ui: &mut egui::Ui,
                             activity: &[u64; statistics::ALL_TIME_DISTRIBUTION_RESOLUTION],
                             seconds_per_bar: u64) {
@@ -169,7 +171,11 @@ impl MainApp {
 
         egui::ScrollArea::vertical().show(ui, |ui| {
 
+            let total_days = seconds_to_days(stats.last_message_date - stats.first_message_date);
+
             text(ui, &format!("Total messages: {}", stats.total_messages));
+            text(ui, &format!("Chat lifetime: {:.0} days", total_days));
+            text(ui, &format!("On average {:.0} messages per day", stats.total_messages as f64 / total_days as f64));
 
             let mut users_messages: Vec<(u64, String)> = stats.users
                 .values()
@@ -237,6 +243,10 @@ impl MainApp {
             text(ui, &format!("Total messages: {} ({:.1}% of all messages)",
                     user.total_messages,
                     (user.total_messages as f64 / stats.total_messages as f64) * 100.0));
+
+            let lifetime = seconds_to_days(stats.last_message_date - user.join_date);
+            text(ui, &format!("Days since joined: {:.0}", lifetime));
+            text(ui, &format!("On average {:.0} messages per day", user.total_messages as f64 / lifetime));
 
             centered_text(ui, "Hourly Message Distribution");
 

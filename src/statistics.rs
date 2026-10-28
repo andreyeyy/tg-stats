@@ -24,9 +24,10 @@ pub struct User {
     pub total_stickers: u64,
     pub day_time_distribution: DayTimeDistribution,
     pub all_time_distribution: AllTimeDistribution,
+    pub join_date: u64,
 }
 impl User {
-    fn new(id: &str) -> Self {
+    fn new(id: &str, join_date: u64) -> Self {
         User{
             id: id.to_string(),
             name: "Deleted Account".to_string(),
@@ -34,6 +35,7 @@ impl User {
             total_stickers: 0,
             day_time_distribution: DayTimeDistribution::default(),
             all_time_distribution: [0u64; ALL_TIME_DISTRIBUTION_RESOLUTION],
+            join_date,
         }
     }
 }
@@ -96,24 +98,24 @@ impl ChatStats {
         for (i, buf) in parser.enumerate() {
 
             let message_str = str::from_utf8(&buf).unwrap();
-            let msg = Message::from_json(message_str);
+            let message = Message::from_json(message_str);
 
             if i == 0 {
-                first_message_date = msg.date_unixtime.parse().unwrap();
+                first_message_date = message.date_unixtime.parse().unwrap();
                 total_seconds = last_message_date - first_message_date;
             }
 
-            if msg.from_id.is_none() {continue;} // service message
+            if message.from_id.is_none() {continue;} // service message
             
             // ID of the user
-            let id = msg.from_id.unwrap();
+            let id = message.from_id.unwrap();
 
             // Add user to hash map
             if !users.contains_key(&id) {
-                users.insert(id.clone(), User::new(&id));
+                users.insert(id.clone(), User::new(&id, message.date_unixtime.parse().unwrap()));
 
                 // Add the name to the user (if they have one)
-                if let Some(username) = msg.from {
+                if let Some(username) = message.from {
                     users.get_mut(&id).unwrap().name = username;
                 }
             }
@@ -127,16 +129,16 @@ impl ChatStats {
             total_messages += 1;
 
             // Count stickers
-            if msg.media_type.is_some() && msg.media_type.unwrap() == "sticker"{
+            if message.media_type.is_some() && message.media_type.unwrap() == "sticker"{
                 user.total_stickers += 1;
             }
 
             // Add data to the daily time distributions of both the entire group and the user
-            let hour: u64 = (&msg.date[11..13]).parse().unwrap();
+            let hour: u64 = (&message.date[11..13]).parse().unwrap();
             *user.day_time_distribution.get_mut(hour as usize).unwrap() += 1;
             *day_time_distribution.get_mut(hour as usize).unwrap() += 1;
 
-            let msg_date: u64 = msg.date_unixtime.parse().unwrap();
+            let msg_date: u64 = message.date_unixtime.parse().unwrap();
             let bucket = ((msg_date - first_message_date) * ALL_TIME_DISTRIBUTION_RESOLUTION as u64 - 1) / total_seconds;
 
             all_time_distribution[bucket as usize] += 1;

@@ -16,6 +16,7 @@ use rfd::FileDialog;
 
 const WINDOW_TITLE: &str = "Telegram Statistics";
 const BASE_FONT_SIZE: f32 = 14.0;
+const SPACE_BETWEEN_GRAPHS: f32 = 20.0;
 
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
@@ -99,6 +100,22 @@ fn activity_over_time_graph(ui: &mut egui::Ui,
 
 }
 
+fn hourly_distribution_graph(ui: &mut egui::Ui, bars: Vec<Bar>) {
+    centered_text(ui, "Hourly Message Distribution");
+    Plot::new("hourly_distribution")
+        .x_axis_formatter(|mark, _range| {
+            format!("{:02}:00", mark.value.round() as u32)
+        })
+        .height(300f32)
+        .allow_scroll(false)
+        .show_crosshair(false)
+        .show_grid(false)
+        .show(ui, |plot_ui| {
+            plot_ui.bar_chart(BarChart::new("hourly_distribution_barchart", bars));
+        });
+
+}
+
 struct MainApp {
     screen: Screen,
     stats: Option<ChatStats>,
@@ -177,6 +194,15 @@ impl MainApp {
             text(ui, &format!("Chat lifetime: {:.0} days", total_days));
             text(ui, &format!("On average {:.0} messages per day", stats.total_messages as f64 / total_days as f64));
 
+            let day_time_distribution_bars = stats.day_time_distribution
+                    .iter()
+                    .enumerate()
+                    .map(|(i, value)| Bar::new(i as f64, *value as f64))
+                    .collect();
+
+            hourly_distribution_graph(ui, day_time_distribution_bars);
+            ui.add_space(SPACE_BETWEEN_GRAPHS);
+
             let mut users_messages: Vec<(u64, String)> = stats.users
                 .values()
                 .map(|user| (user.total_messages, user.name.clone()))
@@ -204,6 +230,7 @@ impl MainApp {
                 .show(ui, |plot_ui| {
                     plot_ui.bar_chart(BarChart::new("Messages", users_messages_bars).horizontal());
                 });
+            ui.add_space(SPACE_BETWEEN_GRAPHS);
 
             let seconds_per_bar = (stats.last_message_date - stats.first_message_date) / statistics::ALL_TIME_DISTRIBUTION_RESOLUTION as u64;
             activity_over_time_graph(ui, &stats.all_time_distribution, seconds_per_bar);
@@ -248,7 +275,6 @@ impl MainApp {
             text(ui, &format!("Days since joined: {:.0}", lifetime));
             text(ui, &format!("On average {:.0} messages per day", user.total_messages as f64 / lifetime));
 
-            centered_text(ui, "Hourly Message Distribution");
 
             let day_time_distribution_bars = user.day_time_distribution
                     .iter()
@@ -256,16 +282,8 @@ impl MainApp {
                     .map(|(i, value)| Bar::new(i as f64, *value as f64))
                     .collect();
 
-            Plot::new("daytime")
-                .height(300f32)
-                .allow_scroll(false)
-                .show_crosshair(false)
-                .show_grid(false)
-                .show(ui, |plot_ui| {
-                    plot_ui.bar_chart(BarChart::new("daytime_barchart", day_time_distribution_bars));
-                });
-
-            ui.add_space(20.0);
+            hourly_distribution_graph(ui, day_time_distribution_bars);
+            ui.add_space(SPACE_BETWEEN_GRAPHS);
 
             let seconds_per_bar = (stats.last_message_date - stats.first_message_date) / statistics::ALL_TIME_DISTRIBUTION_RESOLUTION as u64;
             activity_over_time_graph(ui, &user.all_time_distribution, seconds_per_bar);

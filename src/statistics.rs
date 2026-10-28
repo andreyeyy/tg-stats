@@ -57,7 +57,6 @@ pub enum StatsError {
 
 #[derive(Debug, Deserialize)]
 struct Message {
-    id: i64,
     date_unixtime: String,
     date: String,
     from: Option<String>,

@@ -9,6 +9,8 @@ use serde::Deserialize;
 
 use rev_lines::RevLines;
 
+use tg_export_parser::TgExportParser;
+
 // every item represents how many messages were sent in that hour
 type DayTimeDistribution = [u64; 24];
 
@@ -55,21 +57,6 @@ pub enum StatsError {
     NotJson,
 }
 
-#[derive(Debug, Deserialize)]
-struct Message {
-    date_unixtime: String,
-    date: String,
-    from: Option<String>,
-    from_id: Option<String>,
-    media_type: Option<String>,
-}
-
-impl Message {
-    fn from_json(json_message: &str) -> Self {
-        serde_json::from_str(json_message).unwrap()
-    }
-}
-
 impl ChatStats {
     fn from(filename: &Path) -> Result<ChatStats, StatsError> {
         let mut f = File::open(filename).unwrap_or_else(|_err|{
@@ -85,8 +72,7 @@ impl ChatStats {
 
         f.rewind().unwrap(); // put file cursor back at the start
 
-        let reader = BufReader::new(f);
-        let parser = JsonArrayParser::new(reader);
+        let parser = TgExportParser::from_file(filename).expect("Could not create parser");
 
         let mut total_messages: u64 = 0;
         let mut users: HashMap<String, User> = HashMap::new();
@@ -94,10 +80,9 @@ impl ChatStats {
         let mut day_time_distribution = DayTimeDistribution::default();
         let mut all_time_distribution = [0u64; ALL_TIME_DISTRIBUTION_RESOLUTION];
 
-        for (i, buf) in parser.enumerate() {
+        for (i, message) in parser.enumerate() {
 
-            let message_str = str::from_utf8(&buf).unwrap();
-            let message = Message::from_json(message_str);
+            let message = message.unwrap();
 
             if i == 0 {
                 first_message_date = message.date_unixtime.parse().unwrap();
@@ -180,84 +165,6 @@ fn last_message_date(file: File) -> u64 {
     panic!("No last message date found");
 }
 
-/// Custom JSON array parser to avoid loading the entire file in memory
-struct JsonArrayParser {
-    reader: BufReader<File>,
-    bracket_level: i32,
-    inside_string: bool,
-    last_char_escape: bool,
-}
-
-impl JsonArrayParser {
-    fn new(mut reader: BufReader<File>) -> Self {
-        reader.skip_until(b'[').unwrap();
-        JsonArrayParser{
-            reader,
-            inside_string: false,
-            bracket_level: 0,
-            last_char_escape: false,
-        }
-    }
-}
-
-impl Iterator for JsonArrayParser {
-    type Item = Vec<u8>;
-
-    /// Returns the next message in the .json file
-    fn next(&mut self) -> Option<Self::Item>{
-
-        let mut message_buf: Vec<u8> = Vec::new();
-        let bytes = (&mut self.reader).bytes();
-
-        for b in bytes {
-            let b = b.unwrap();
-
-            message_buf.push(b);
-
-            if self.last_char_escape { // if the character before is '\'
-                self.last_char_escape = false;
-                assert!(self.inside_string, "Unexpected backslash outside of a string");
-                assert!(
-                    b == b'\\' || 
-                    b == b'\"' || 
-                    b == b'/' || 
-                    b == b'b' || 
-                    b == b'f' || 
-                    b == b'n' || 
-                    b == b'r' || 
-                    b == b't' || 
-                    b == b'u',
-                    "Unexpected escaped character: \\{}", b as char
-                );
-                continue;
-            }
-
-            if b == b'\\' { // escape character
-                self.last_char_escape = true;
-            }
-
-            else if b == b'\"' { // the " character, not escaped
-                self.inside_string = !self.inside_string;
-            }
-
-            else if b == b'{' {
-                if self.inside_string {continue;}
-                self.bracket_level += 1;
-            }
-
-            else if b == b'}' {
-                if self.inside_string {continue;}
-                self.bracket_level -= 1;
-                if self.bracket_level == 0 {
-                    let _ = self.reader.skip_until(b',');
-                    return Some(message_buf);
-                }
-            }
-
-        }
-        return None;
-    }
-}
 
 pub fn generate(json_path: &Path) -> Result<ChatStats, StatsError> {
     Ok(ChatStats::from(json_path)?)
